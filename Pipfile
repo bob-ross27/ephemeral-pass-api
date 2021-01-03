@@ -6,6 +6,7 @@ name = "pypi"
 [packages]
 fastapi = "*"
 pycryptodome = "*"
+pymongo = "*"
 
 [dev-packages]
 black = "*"

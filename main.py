@@ -1,6 +1,7 @@
-from os import stat
+import sys
 import random
 import string
+import pymongo
 from Crypto.Cipher import AES
 from fastapi import FastAPI, HTTPException
 from typing import Optional
@@ -9,13 +10,32 @@ from pydantic import BaseModel
 
 class UserPassword(BaseModel):
     """
-    Class to hold type information used to encrypt the password.
+    Class to hold information used to encrypt the password.
     """
 
     password: str
     views: int
     expiration: int  # Hours
     email_addresses: Optional[str] = None
+
+
+def create_mongo_client():
+    """
+    Create and return the pymongo client.
+    Test to ensure the server is reachable with .server_info()
+    """
+
+    client = pymongo.MongoClient(
+        "mongodb://localhost:27017/", serverSelectionTimeoutMS=5000
+    )
+
+    try:
+        client.server_info()
+        print("INFO: Connected to MongoDB server.")
+        return client
+    except:
+        print("ERROR: Unable to connect to the MongoDB server.")
+        sys.exit()
 
 
 def generate_secret_key(length):
@@ -45,7 +65,7 @@ def encrypt_password(password, key):
         nonce = cipher.nonce
 
         return {
-            "id": key[:5],
+            "uuid": key[:5],
             "nonce": nonce,
             "tag": tag,
             "ciphertext": ciphertext,
@@ -82,30 +102,30 @@ def get_password(url):
     Using the URL as the AES key, find the corresponding database entry and decrypt.
     Decrement the view count and remove from database if no views remain.
     """
-    db_entry = [x for x in db if x["id"] == url[:5]]
+    db_entry = mongo_password_col.find_one({"uuid": url[:5]})
     if db_entry:
-        try:
-            db_entry = db_entry[0]
-
-            db_entry["views"] -= 1
-            decrypted_password = decrypt_password_with_url(url, db_entry)
-            if not decrypted_password:
-                raise HTTPException(
-                    status_code=404, detail="Unable to decrypt password."
-                )
-
-            return_body = {
-                "password": decrypted_password,
-                "views": db_entry["views"],
-                "expiration": db_entry["expiration"],
-            }
-
-            if db_entry["views"] == 0:  # TODO: or expiration in the past
-                db.remove(db_entry)
-
-            return return_body
-        except:
+        decrypted_password = decrypt_password_with_url(url, db_entry)
+        if not decrypted_password:
             raise HTTPException(status_code=404, detail="Unable to decrypt password.")
+
+        db_entry["views"] -= 1
+
+        try:
+            if db_entry["views"] == 0:  # TODO: or expiration in the past
+                mongo_password_col.delete_one({"uuid": url[:5]})
+            else:
+                mongo_password_col.update_one(
+                    {"uuid": url[:5]}, {"$set": {"views": db_entry["views"]}}
+                )
+        except:
+            raise HTTPException(
+                status_code=404, detail="Unable to update password entry."
+            )
+        return {
+            "password": decrypted_password,
+            "views": db_entry["views"],
+            "expiration": db_entry["expiration"],
+        }
     else:
         raise HTTPException(status_code=404, detail="Item not found")
 
@@ -117,12 +137,15 @@ def post_password(password: UserPassword):
     Add the ciphertext and associated fields to the database, and return
     the AES key to the user as the URL.
     """
+
     encryption_key = generate_secret_key(32)
     password_entry = encrypt_password(password, encryption_key)
     if password_entry:
-        db.append(password_entry)
+        mongo_password_col.insert_one(password_entry)
         return {"Success": f"Added Password at URL: {encryption_key}"}
     raise HTTPException(status_code=404, detail="Unable to add new password.")
 
 
-db = []
+mongo_client = create_mongo_client()
+db = mongo_client["ephemeral-pass"]
+mongo_password_col = db["passwords"]
