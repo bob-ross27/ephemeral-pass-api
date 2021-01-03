@@ -103,31 +103,30 @@ def get_password(url):
     Decrement the view count and remove from database if no views remain.
     """
     db_entry = mongo_password_col.find_one({"uuid": url[:5]})
-    if db_entry:
-        decrypted_password = decrypt_password_with_url(url, db_entry)
-        if not decrypted_password:
-            raise HTTPException(status_code=404, detail="Unable to decrypt password.")
-
-        db_entry["views"] -= 1
-
-        try:
-            if db_entry["views"] == 0:  # TODO: or expiration in the past
-                mongo_password_col.delete_one({"uuid": url[:5]})
-            else:
-                mongo_password_col.update_one(
-                    {"uuid": url[:5]}, {"$set": {"views": db_entry["views"]}}
-                )
-        except:
-            raise HTTPException(
-                status_code=404, detail="Unable to update password entry."
-            )
-        return {
-            "password": decrypted_password,
-            "views": db_entry["views"],
-            "expiration": db_entry["expiration"],
-        }
-    else:
+    if not db_entry:
         raise HTTPException(status_code=404, detail="Item not found")
+
+    decrypted_password = decrypt_password_with_url(url, db_entry)
+    if not decrypted_password:
+        raise HTTPException(status_code=404, detail="Unable to decrypt password.")
+
+    db_entry["views"] -= 1
+
+    try:
+        if db_entry["views"] == 0:  # TODO: or expiration in the past
+            mongo_password_col.delete_one({"uuid": url[:5]})
+        else:
+            mongo_password_col.update_one(
+                {"uuid": url[:5]}, {"$set": {"views": db_entry["views"]}}
+            )
+    except:
+        raise HTTPException(status_code=404, detail="Unable to update password entry.")
+
+    return {
+        "password": decrypted_password,
+        "views": db_entry["views"],
+        "expiration": db_entry["expiration"],
+    }
 
 
 @app.post("/api/new")
