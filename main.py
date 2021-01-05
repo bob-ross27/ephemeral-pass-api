@@ -1,6 +1,8 @@
-from os import stat
+import os
+import sys
 import random
 import string
+import pymongo
 from Crypto.Cipher import AES
 from fastapi import FastAPI, HTTPException
 from typing import Optional
@@ -16,6 +18,51 @@ class UserPassword(BaseModel):
     views: int
     expiration: int  # Hours
     email_addresses: Optional[str] = None
+
+
+def get_mongo_config():
+    """
+    Get the Mongo config information from set environment variables
+    fall back to MongoDB default values if not present.
+    """
+
+    try:
+        host = os.environ["MONGODB_HOST"]
+    except KeyError:
+        host = "localhost"
+
+    try:
+        port = os.environ["MONGODB_PORT"]
+    except KeyError:
+        port = 27017
+
+    try:
+        timeout = os.environ["MONGODB_TIMEOUT"]
+    except KeyError:
+        timeout = 5000
+
+    return {"host": host, "port": port, "timeout": timeout}
+
+
+def create_mongo_client():
+    """
+    Create and return the pymongo client.
+    Test to ensure the server is reachable with .server_info()
+    """
+    mongo_config = get_mongo_config()
+    client = pymongo.MongoClient(
+        f"mongodb://{mongo_config['host']}:{mongo_config['port']}/",
+        serverSelectionTimeoutMS=mongo_config["timeout"],
+    )
+
+    # Use server_info() to force a connection to be established to the MongBD server.
+    # if no response is received before configured timeout, return False.
+    try:
+        client.server_info()
+        return client
+    except pymongo.errors.ServerSelectionTimeoutError:
+        # Server unavailable.
+        return False
 
 
 def generate_secret_key(length):
@@ -45,7 +92,7 @@ def encrypt_password(password, key):
         nonce = cipher.nonce
 
         return {
-            "id": key[:5],
+            "uuid": key[:5],
             "nonce": nonce,
             "tag": tag,
             "ciphertext": ciphertext,
@@ -82,32 +129,31 @@ def get_password(url):
     Using the URL as the AES key, find the corresponding database entry and decrypt.
     Decrement the view count and remove from database if no views remain.
     """
-    db_entry = [x for x in db if x["id"] == url[:5]]
-    if db_entry:
-        try:
-            db_entry = db_entry[0]
-
-            db_entry["views"] -= 1
-            decrypted_password = decrypt_password_with_url(url, db_entry)
-            if not decrypted_password:
-                raise HTTPException(
-                    status_code=404, detail="Unable to decrypt password."
-                )
-
-            return_body = {
-                "password": decrypted_password,
-                "views": db_entry["views"],
-                "expiration": db_entry["expiration"],
-            }
-
-            if db_entry["views"] == 0:  # TODO: or expiration in the past
-                db.remove(db_entry)
-
-            return return_body
-        except:
-            raise HTTPException(status_code=404, detail="Unable to decrypt password.")
-    else:
+    db_entry = mongo_password_col.find_one({"uuid": url[:5]})
+    if not db_entry:
         raise HTTPException(status_code=404, detail="Item not found")
+
+    decrypted_password = decrypt_password_with_url(url, db_entry)
+    if not decrypted_password:
+        raise HTTPException(status_code=404, detail="Unable to decrypt password.")
+
+    db_entry["views"] -= 1
+
+    try:
+        if db_entry["views"] == 0:  # TODO: or expiration in the past
+            mongo_password_col.delete_one({"uuid": url[:5]})
+        else:
+            mongo_password_col.update_one(
+                {"uuid": url[:5]}, {"$set": {"views": db_entry["views"]}}
+            )
+    except:
+        raise HTTPException(status_code=404, detail="Unable to update password entry.")
+
+    return {
+        "password": decrypted_password,
+        "views": db_entry["views"],
+        "expiration": db_entry["expiration"],
+    }
 
 
 @app.post("/api/new")
@@ -117,12 +163,19 @@ def post_password(password: UserPassword):
     Add the ciphertext and associated fields to the database, and return
     the AES key to the user as the URL.
     """
+
     encryption_key = generate_secret_key(32)
     password_entry = encrypt_password(password, encryption_key)
     if password_entry:
-        db.append(password_entry)
+        mongo_password_col.insert_one(password_entry)
         return {"Success": f"Added Password at URL: {encryption_key}"}
     raise HTTPException(status_code=404, detail="Unable to add new password.")
 
 
-db = []
+mongo_client = create_mongo_client()
+if not mongo_client:
+    print("ERROR: Unable to connect to MongoDB server. Exiting.")
+    sys.exit()
+
+db = mongo_client["ephemeral-pass"]
+mongo_password_col = db["passwords"]
