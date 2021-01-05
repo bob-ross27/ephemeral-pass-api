@@ -11,7 +11,7 @@ from pydantic import BaseModel
 
 class UserPassword(BaseModel):
     """
-    Class to hold information used to encrypt the password.
+    Class to hold type information used to encrypt the password.
     """
 
     password: str
