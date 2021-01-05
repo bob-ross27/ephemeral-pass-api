@@ -1,3 +1,4 @@
+import os
 import sys
 import random
 import string
@@ -19,14 +20,35 @@ class UserPassword(BaseModel):
     email_addresses: Optional[str] = None
 
 
+def get_mongo_config():
+    """
+    Get the Mongo config information from set environment variables
+    fall back to MongoDB default values if not present.
+    """
+
+    try:
+        host = os.environ["MONGODB_HOST"]
+    except KeyError:
+        host = "localhost"
+
+    try:
+        port = os.environ["MONGODB_PORT"]
+    except KeyError:
+        port = "27017"
+
+    return {"host": host, "port": port}
+
+
 def create_mongo_client():
     """
     Create and return the pymongo client.
     Test to ensure the server is reachable with .server_info()
     """
+    mongo_config = get_mongo_config()
 
     client = pymongo.MongoClient(
-        "mongodb://localhost:27017/", serverSelectionTimeoutMS=5000
+        f"mongodb://{mongo_config['host']}:{mongo_config['port']}/",
+        serverSelectionTimeoutMS=5000,
     )
 
     try:
