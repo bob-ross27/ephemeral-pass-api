@@ -34,9 +34,14 @@ def get_mongo_config():
     try:
         port = os.environ["MONGODB_PORT"]
     except KeyError:
-        port = "27017"
+        port = 27017
 
-    return {"host": host, "port": port}
+    try:
+        timeout = os.environ["MONGODB_TIMEOUT"]
+    except KeyError:
+        timeout = 5000
+
+    return {"host": host, "port": port, "timeout": timeout}
 
 
 def create_mongo_client():
@@ -45,18 +50,18 @@ def create_mongo_client():
     Test to ensure the server is reachable with .server_info()
     """
     mongo_config = get_mongo_config()
-
     client = pymongo.MongoClient(
         f"mongodb://{mongo_config['host']}:{mongo_config['port']}/",
-        serverSelectionTimeoutMS=5000,
+        serverSelectionTimeoutMS=mongo_config["timeout"],
     )
 
+    # Use server_info() to force a connection to be established to the MongBD server.
+    # Exit if the server doesn't return within the serverSelectionTimeoutMS.
     try:
         client.server_info()
-        print("INFO: Connected to MongoDB server.")
         return client
-    except:
-        print("ERROR: Unable to connect to the MongoDB server.")
+    except pymongo.errors.ServerSelectionTimeoutError:
+        # Server unavailable.
         sys.exit()
 
 
