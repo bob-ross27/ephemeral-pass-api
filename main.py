@@ -56,13 +56,13 @@ def create_mongo_client():
     )
 
     # Use server_info() to force a connection to be established to the MongBD server.
-    # Exit if the server doesn't return within the serverSelectionTimeoutMS.
+    # if no response is received before configured timeout, return False.
     try:
         client.server_info()
         return client
     except pymongo.errors.ServerSelectionTimeoutError:
         # Server unavailable.
-        sys.exit()
+        return False
 
 
 def generate_secret_key(length):
@@ -173,5 +173,9 @@ def post_password(password: UserPassword):
 
 
 mongo_client = create_mongo_client()
+if not mongo_client:
+    print("ERROR: Unable to connect to MongoDB server. Exiting.")
+    sys.exit()
+
 db = mongo_client["ephemeral-pass"]
 mongo_password_col = db["passwords"]
