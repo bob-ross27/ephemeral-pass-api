@@ -33,7 +33,7 @@ def configure_logging():
         log_level = "WARNING"
 
     logging.basicConfig(format="%(asctime)s:%(levelname)s:%(message)s", level=log_level)
-    logging.debug("Configured logger.")
+    logging.debug(f"Configured logger at level {log_level}.")
 
 
 def get_mongo_config():
