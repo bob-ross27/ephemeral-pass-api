@@ -3,6 +3,7 @@ import sys
 import random
 import string
 import pymongo
+import logging
 from Crypto.Cipher import AES
 from fastapi import FastAPI, HTTPException
 from typing import Optional
@@ -20,6 +21,21 @@ class UserPassword(BaseModel):
     email_addresses: Optional[str] = None
 
 
+def configure_logging():
+    """
+    Configure the logging module using environment variables.
+    fall back to the logging default if not present.
+    """
+
+    try:
+        log_level = os.environ["LOG_LEVEL"].upper()
+    except KeyError:
+        log_level = "WARNING"
+
+    logging.basicConfig(format="%(asctime)s:%(levelname)s:%(message)s", level=log_level)
+    logging.debug("Configured logger.")
+
+
 def get_mongo_config():
     """
     Get the Mongo config information from set environment variables
@@ -28,18 +44,24 @@ def get_mongo_config():
 
     try:
         host = os.environ["MONGODB_HOST"]
+        logging.debug(f"MongoDB host set to {host} using environment variable.")
     except KeyError:
         host = "localhost"
+    logging.debug(f"MongoDB host set to default value: {host}")
 
     try:
         port = os.environ["MONGODB_PORT"]
+        logging.debug(f"MongoDB port set to {port} using environment variable.")
     except KeyError:
         port = 27017
+    logging.debug(f"MongoDB port set to default value: {port}")
 
     try:
         timeout = os.environ["MONGODB_TIMEOUT"]
+        logging.debug(f"MongoDB timeout set to {timeout} using environment variable.")
     except KeyError:
         timeout = 5000
+    logging.debug(f"MongoDB timeout set to default value: {timeout}")
 
     return {"host": host, "port": port, "timeout": timeout}
 
@@ -59,9 +81,10 @@ def create_mongo_client():
     # if no response is received before configured timeout, return False.
     try:
         client.server_info()
+        logging.info("Connected to MongoDB server.")
         return client
     except pymongo.errors.ServerSelectionTimeoutError:
-        # Server unavailable.
+        logging.fatal("ERROR: Unable to connect to MongoDB server. Exiting.")
         return False
 
 
@@ -76,6 +99,7 @@ def generate_secret_key(length):
         for _ in range(length)
     )
 
+    logging.debug("Generated secret key.")
     return secret_key
 
 
@@ -91,6 +115,7 @@ def encrypt_password(password, key):
         ciphertext, tag = cipher.encrypt_and_digest(plaintext_password.encode("utf-8"))
         nonce = cipher.nonce
 
+        logging.debug("Password encrypted.")
         return {
             "uuid": key[:5],
             "nonce": nonce,
@@ -100,6 +125,7 @@ def encrypt_password(password, key):
             "views": password.views,
         }
     except:
+        logging.exception("Unable to encrypt password.")
         return False
 
 
@@ -115,8 +141,10 @@ def decrypt_password_with_url(input_url, db_entry):
         decrypted_password = cipher_decrypt.decrypt_and_verify(
             db_entry["ciphertext"], db_entry["tag"]
         )
+        logging.debug("Ppassword decrypted.")
         return decrypted_password
     except:
+        logging.exception("Unable to decrypt password, or verification failed.")
         return False
 
 
@@ -131,22 +159,29 @@ def get_password(url):
     """
     db_entry = mongo_password_col.find_one({"uuid": url[:5]})
     if not db_entry:
+        logging.info("Item not found")
         raise HTTPException(status_code=404, detail="Item not found")
 
     decrypted_password = decrypt_password_with_url(url, db_entry)
     if not decrypted_password:
+        logging.exception("Unable to decrypt password.")
         raise HTTPException(status_code=404, detail="Unable to decrypt password.")
-
+    logging.info("Accessing password.")
     db_entry["views"] -= 1
 
     try:
         if db_entry["views"] == 0:  # TODO: or expiration in the past
             mongo_password_col.delete_one({"uuid": url[:5]})
+            logging.info(
+                "Password deleted due to no remaining views or expiration time exceeded."
+            )
         else:
             mongo_password_col.update_one(
                 {"uuid": url[:5]}, {"$set": {"views": db_entry["views"]}}
             )
+            logging.debug("Password views updated.")
     except:
+        logging.exception("Unable to update password entry.")
         raise HTTPException(status_code=404, detail="Unable to update password entry.")
 
     return {
@@ -168,13 +203,16 @@ def post_password(password: UserPassword):
     password_entry = encrypt_password(password, encryption_key)
     if password_entry:
         mongo_password_col.insert_one(password_entry)
+        logging.info(f"Password added at URL: {encryption_key}")
         return {"Success": f"Added Password at URL: {encryption_key}"}
+    logging.warning("Unable to add new password.")
     raise HTTPException(status_code=404, detail="Unable to add new password.")
 
 
+configure_logging()
+
 mongo_client = create_mongo_client()
 if not mongo_client:
-    print("ERROR: Unable to connect to MongoDB server. Exiting.")
     sys.exit()
 
 db = mongo_client["ephemeral-pass"]
