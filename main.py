@@ -51,21 +51,21 @@ def get_mongo_config():
         logging.debug(f"MongoDB host set to {host} using environment variable.")
     except KeyError:
         host = "localhost"
-    logging.debug(f"MongoDB host set to default value: {host}")
+        logging.debug(f"MongoDB host set to default value: {host}")
 
     try:
         port = os.environ["MONGODB_PORT"]
         logging.debug(f"MongoDB port set to {port} using environment variable.")
     except KeyError:
         port = 27017
-    logging.debug(f"MongoDB port set to default value: {port}")
+        logging.debug(f"MongoDB port set to default value: {port}")
 
     try:
         timeout = os.environ["MONGODB_TIMEOUT"]
         logging.debug(f"MongoDB timeout set to {timeout} using environment variable.")
     except KeyError:
         timeout = 5000
-    logging.debug(f"MongoDB timeout set to default value: {timeout}")
+        logging.debug(f"MongoDB timeout set to default value: {timeout}")
 
     return {"host": host, "port": port, "timeout": timeout}
 
@@ -221,3 +221,6 @@ if not mongo_client:
 
 db = mongo_client["ephemeral-pass"]
 mongo_password_col = db["passwords"]
+
+# API configured and ready to start
+logging.info("ephemeral-pass API configuration complete.")
