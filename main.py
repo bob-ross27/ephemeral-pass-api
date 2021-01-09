@@ -26,9 +26,13 @@ def configure_logging():
     Configure the logging module using environment variables.
     fall back to the logging default if not present.
     """
+    log_levels = ["CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"]
 
     try:
         log_level = os.environ["LOG_LEVEL"].upper()
+        # validate log_level against supported levels.
+        if log_level not in log_levels:
+            log_level = "WARNING"
     except KeyError:
         log_level = "WARNING"
 
