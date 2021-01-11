@@ -40,34 +40,49 @@ def configure_logging():
     logging.debug(f"Configured logger at level {log_level}.")
 
 
+def get_env_var(var_name, var_text_name, default_value, error_msg=None):
+    """
+    Try to get the environment variable, and fall back to the default.
+    """
+
+    try:
+        env_var = os.environ[var_name]
+        logging.debug(
+            f"MongoDB {var_text_name} set to {env_var} using environment variable."
+        )
+    except KeyError:
+        env_var = default_value
+        if error_msg:
+            logging.debug(error_msg)
+        else:
+            logging.debug(f"MongoDB host set to default value: {default_value}")
+
+    return env_var
+
+
 def get_mongo_config():
     """
     Get the Mongo config information from set environment variables
     fall back to MongoDB default values if not present.
     """
 
-    try:
-        host = os.environ["MONGODB_HOST"]
-        logging.debug(f"MongoDB host set to {host} using environment variable.")
-    except KeyError:
-        host = "localhost"
-        logging.debug(f"MongoDB host set to default value: {host}")
+    host = get_env_var("MONGODB_HOST", "host", "localhost")
+    port = get_env_var("MONGODB_PORT", "port", 27017)
+    timeout = get_env_var("MONGODB_TIMEOUT", "timeout", 5000)
+    username = get_env_var(
+        "MONGODB_USER", "user", None, "No MongoDB username provided."
+    )
+    password = get_env_var(
+        "MONGODB_PASS", "password", None, "No MongoDB password provided."
+    )
 
-    try:
-        port = os.environ["MONGODB_PORT"]
-        logging.debug(f"MongoDB port set to {port} using environment variable.")
-    except KeyError:
-        port = 27017
-        logging.debug(f"MongoDB port set to default value: {port}")
-
-    try:
-        timeout = os.environ["MONGODB_TIMEOUT"]
-        logging.debug(f"MongoDB timeout set to {timeout} using environment variable.")
-    except KeyError:
-        timeout = 5000
-        logging.debug(f"MongoDB timeout set to default value: {timeout}")
-
-    return {"host": host, "port": port, "timeout": timeout}
+    return {
+        "host": host,
+        "port": port,
+        "timeout": timeout,
+        "username": username,
+        "password": password,
+    }
 
 
 def create_mongo_client():
@@ -76,9 +91,17 @@ def create_mongo_client():
     Test to ensure the server is reachable with .server_info()
     """
     mongo_config = get_mongo_config()
+
+    # Exit if no credentials provided.
+    if not mongo_config["username"] or not mongo_config["password"]:
+        logging.fatal("No MongoDB Credentials provided. Exiting")
+        return False
+
     client = pymongo.MongoClient(
         f"mongodb://{mongo_config['host']}:{mongo_config['port']}/",
         serverSelectionTimeoutMS=mongo_config["timeout"],
+        username=mongo_config["username"],
+        password=mongo_config["password"],
     )
 
     # Use server_info() to force a connection to be established to the MongBD server.
@@ -88,7 +111,7 @@ def create_mongo_client():
         logging.info("Connected to MongoDB server.")
         return client
     except pymongo.errors.ServerSelectionTimeoutError:
-        logging.fatal("ERROR: Unable to connect to MongoDB server. Exiting.")
+        logging.fatal("Unable to connect to MongoDB server. Exiting.")
         return False
 
 
@@ -145,7 +168,7 @@ def decrypt_password_with_url(input_url, db_entry):
         decrypted_password = cipher_decrypt.decrypt_and_verify(
             db_entry["ciphertext"], db_entry["tag"]
         )
-        logging.debug("Ppassword decrypted.")
+        logging.debug("Password decrypted.")
         return decrypted_password
     except:
         logging.exception("Unable to decrypt password, or verification failed.")
@@ -170,7 +193,7 @@ def get_password(url):
     if not decrypted_password:
         logging.exception("Unable to decrypt password.")
         raise HTTPException(status_code=404, detail="Unable to decrypt password.")
-    logging.info("Accessing password.")
+    logging.debug("Accessing password.")
     db_entry["views"] -= 1
 
     try:
