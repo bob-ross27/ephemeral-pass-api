@@ -111,7 +111,7 @@ def create_mongo_client():
         logging.info("Connected to MongoDB server.")
         return client
     except pymongo.errors.ServerSelectionTimeoutError:
-        logging.fatal("ERROR: Unable to connect to MongoDB server. Exiting.")
+        logging.fatal("Unable to connect to MongoDB server. Exiting.")
         return False
 
 
@@ -168,7 +168,7 @@ def decrypt_password_with_url(input_url, db_entry):
         decrypted_password = cipher_decrypt.decrypt_and_verify(
             db_entry["ciphertext"], db_entry["tag"]
         )
-        logging.debug("Ppassword decrypted.")
+        logging.debug("Password decrypted.")
         return decrypted_password
     except:
         logging.exception("Unable to decrypt password, or verification failed.")
@@ -193,7 +193,7 @@ def get_password(url):
     if not decrypted_password:
         logging.exception("Unable to decrypt password.")
         raise HTTPException(status_code=404, detail="Unable to decrypt password.")
-    logging.info("Accessing password.")
+    logging.debug("Accessing password.")
     db_entry["views"] -= 1
 
     try:
