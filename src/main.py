@@ -67,7 +67,27 @@ def get_mongo_config():
         timeout = 5000
         logging.debug(f"MongoDB timeout set to default value: {timeout}")
 
-    return {"host": host, "port": port, "timeout": timeout}
+    try:
+        username = os.environ["MONGODB_USER"]
+        logging.debug(f"MongoDB username set to {username} using environment variable.")
+    except KeyError:
+        username = None
+        logging.debug("No MongoDB username provided.")
+
+    try:
+        password = os.environ["MONGODB_PASS"]
+        logging.debug(f"MongoDB password set to {password} using environment variable.")
+    except KeyError:
+        password = None
+        logging.debug("No MongoDB password provided.")
+
+    return {
+        "host": host,
+        "port": port,
+        "timeout": timeout,
+        "username": username,
+        "password": password,
+    }
 
 
 def create_mongo_client():
@@ -76,9 +96,17 @@ def create_mongo_client():
     Test to ensure the server is reachable with .server_info()
     """
     mongo_config = get_mongo_config()
+
+    # Exit if no credentials provided.
+    if not mongo_config["username"] or not mongo_config["password"]:
+        logging.fatal("No MongoDB Credentials provided. Exiting")
+        return False
+
     client = pymongo.MongoClient(
         f"mongodb://{mongo_config['host']}:{mongo_config['port']}/",
         serverSelectionTimeoutMS=mongo_config["timeout"],
+        username=mongo_config["username"],
+        password=mongo_config["password"],
     )
 
     # Use server_info() to force a connection to be established to the MongBD server.
