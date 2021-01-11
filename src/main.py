@@ -40,46 +40,41 @@ def configure_logging():
     logging.debug(f"Configured logger at level {log_level}.")
 
 
+def get_env_var(var_name, var_text_name, default_value, error_msg=None):
+    """
+    Try to get the environment variable, and fall back to the default.
+    """
+
+    try:
+        env_var = os.environ[var_name]
+        logging.debug(
+            f"MongoDB {var_text_name} set to {env_var} using environment variable."
+        )
+    except KeyError:
+        env_var = default_value
+        if error_msg:
+            logging.debug(error_msg)
+        else:
+            logging.debug(f"MongoDB host set to default value: {default_value}")
+
+    return env_var
+
+
 def get_mongo_config():
     """
     Get the Mongo config information from set environment variables
     fall back to MongoDB default values if not present.
     """
 
-    try:
-        host = os.environ["MONGODB_HOST"]
-        logging.debug(f"MongoDB host set to {host} using environment variable.")
-    except KeyError:
-        host = "localhost"
-        logging.debug(f"MongoDB host set to default value: {host}")
-
-    try:
-        port = os.environ["MONGODB_PORT"]
-        logging.debug(f"MongoDB port set to {port} using environment variable.")
-    except KeyError:
-        port = 27017
-        logging.debug(f"MongoDB port set to default value: {port}")
-
-    try:
-        timeout = os.environ["MONGODB_TIMEOUT"]
-        logging.debug(f"MongoDB timeout set to {timeout} using environment variable.")
-    except KeyError:
-        timeout = 5000
-        logging.debug(f"MongoDB timeout set to default value: {timeout}")
-
-    try:
-        username = os.environ["MONGODB_USER"]
-        logging.debug(f"MongoDB username set to {username} using environment variable.")
-    except KeyError:
-        username = None
-        logging.debug("No MongoDB username provided.")
-
-    try:
-        password = os.environ["MONGODB_PASS"]
-        logging.debug(f"MongoDB password set to {password} using environment variable.")
-    except KeyError:
-        password = None
-        logging.debug("No MongoDB password provided.")
+    host = get_env_var("MONGODB_HOST", "host", "localhost")
+    port = get_env_var("MONGODB_PORT", "port", 27017)
+    timeout = get_env_var("MONGODB_TIMEOUT", "timeout", 5000)
+    username = get_env_var(
+        "MONGODB_USER", "user", None, "No MongoDB username provided."
+    )
+    password = get_env_var(
+        "MONGODB_PASS", "password", None, "No MongoDB password provided."
+    )
 
     return {
         "host": host,
