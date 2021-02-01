@@ -117,6 +117,18 @@ def create_mongo_client():
         return False
 
 
+def hash_key(key):
+    """
+    Use SHA1 to hash the key and return the resulting hash.
+    """
+
+    sha = hashlib.sha1()
+    sha.update(key.encode("utf-8"))
+    hashed_key = sha.digest()
+
+    return hashed_key
+
+
 def generate_secret_key(length):
     """
     Generate a random string of characters.
@@ -144,13 +156,11 @@ def encrypt_password(password, key):
         cipher = AES.new(key.encode("utf-8"), AES.MODE_EAX)
         ciphertext, tag = cipher.encrypt_and_digest(plaintext_password.encode("utf-8"))
         nonce = cipher.nonce
-        sha = hashlib.sha1()
-        sha.update(key.encode("utf-8"))
-        hashed_key = sha.digest()
+        uuid = hash_key(key)
 
         logging.debug("Password encrypted.")
         return {
-            "uuid": hashed_key,
+            "uuid": uuid,
             "nonce": nonce,
             "tag": tag,
             "ciphertext": ciphertext,
@@ -190,10 +200,7 @@ def get_password(url):
     Using the URL as the AES key, find the corresponding database entry and decrypt.
     Decrement the view count and remove from database if no views remain.
     """
-    key = url
-    sha = hashlib.sha1()
-    sha.update(key.encode("utf-8"))
-    uuid = sha.digest()
+    uuid = hash_key(url)
 
     db_entry = mongo_password_col.find_one({"uuid": uuid})
     if not db_entry:
