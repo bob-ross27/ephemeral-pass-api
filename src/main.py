@@ -156,11 +156,21 @@ def encrypt_password(password, key):
         cipher = AES.new(key.encode("utf-8"), AES.MODE_EAX)
         ciphertext, tag = cipher.encrypt_and_digest(plaintext_password.encode("utf-8"))
         nonce = cipher.nonce
+<<<<<<< HEAD
         uuid = hash_key(key)
 
         logging.debug("Password encrypted.")
         return {
             "uuid": uuid,
+=======
+        sha = hashlib.sha1()
+        sha.update(key.encode("utf-8"))
+        hashed_key = sha.digest()
+
+        logging.debug("Password encrypted.")
+        return {
+            "uuid": hashed_key,
+>>>>>>> Use the sha1 hash of the key as the uuid.
             "nonce": nonce,
             "tag": tag,
             "ciphertext": ciphertext,
@@ -200,7 +210,14 @@ def get_password(url):
     Using the URL as the AES key, find the corresponding database entry and decrypt.
     Decrement the view count and remove from database if no views remain.
     """
+<<<<<<< HEAD
     uuid = hash_key(url)
+=======
+    key = url
+    sha = hashlib.sha1()
+    sha.update(key.encode("utf-8"))
+    uuid = sha.digest()
+>>>>>>> Use the sha1 hash of the key as the uuid.
 
     db_entry = mongo_password_col.find_one({"uuid": uuid})
     if not db_entry:
