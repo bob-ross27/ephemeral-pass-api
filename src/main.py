@@ -2,11 +2,13 @@ import os
 import sys
 import random
 import string
-import pymongo
+import hashlib
 import logging
+from typing import Optional
+
+import pymongo
 from Crypto.Cipher import AES
 from fastapi import FastAPI, HTTPException
-from typing import Optional
 from pydantic import BaseModel
 
 
@@ -115,6 +117,18 @@ def create_mongo_client():
         return False
 
 
+def hash_key(key):
+    """
+    Use SHA1 to hash the key and return the resulting hash.
+    """
+
+    sha = hashlib.sha1()
+    sha.update(key.encode("utf-8"))
+    hashed_key = sha.digest()
+
+    return hashed_key
+
+
 def generate_secret_key(length):
     """
     Generate a random string of characters.
@@ -137,14 +151,16 @@ def encrypt_password(password, key):
     This ensures the database doesn't know the key directly, only a subset used as the ID for lookup purposes.
     """
     plaintext_password = password.password
+
     try:
         cipher = AES.new(key.encode("utf-8"), AES.MODE_EAX)
         ciphertext, tag = cipher.encrypt_and_digest(plaintext_password.encode("utf-8"))
         nonce = cipher.nonce
+        uuid = hash_key(key)
 
         logging.debug("Password encrypted.")
         return {
-            "uuid": key[:5],
+            "uuid": uuid,
             "nonce": nonce,
             "tag": tag,
             "ciphertext": ciphertext,
@@ -184,7 +200,9 @@ def get_password(url):
     Using the URL as the AES key, find the corresponding database entry and decrypt.
     Decrement the view count and remove from database if no views remain.
     """
-    db_entry = mongo_password_col.find_one({"uuid": url[:5]})
+    uuid = hash_key(url)
+
+    db_entry = mongo_password_col.find_one({"uuid": uuid})
     if not db_entry:
         logging.info("Item not found")
         raise HTTPException(status_code=404, detail="Item not found")
@@ -198,13 +216,13 @@ def get_password(url):
 
     try:
         if db_entry["views"] == 0:  # TODO: or expiration in the past
-            mongo_password_col.delete_one({"uuid": url[:5]})
+            mongo_password_col.delete_one({"uuid": uuid})
             logging.info(
                 "Password deleted due to no remaining views or expiration time exceeded."
             )
         else:
             mongo_password_col.update_one(
-                {"uuid": url[:5]}, {"$set": {"views": db_entry["views"]}}
+                {"uuid": uuid}, {"$set": {"views": db_entry["views"]}}
             )
             logging.debug("Password views updated.")
     except:
